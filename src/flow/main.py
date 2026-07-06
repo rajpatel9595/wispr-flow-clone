@@ -84,6 +84,12 @@ class FlowApp:
 
     def _tick(self, _timer) -> None:
         """Runs on the rumps main thread — safe to touch AppKit/HUD here."""
+        try:
+            self._tick_inner()
+        except Exception as e:  # a UI hiccup must never kill the app
+            print(f"[flow] ui error: {e}")
+
+    def _tick_inner(self) -> None:
         state = self._state
         if state == "recording":
             self._hud.set_level(self.recorder.level)
@@ -117,9 +123,10 @@ class FlowApp:
     def _refresh_history(self) -> None:
         import rumps
 
-        if self._history_menu is None:
+        if self._history_menu is None or not self.history:
             return
-        self._history_menu.clear()
+        if self._history_menu._menu is not None:  # rumps creates the submenu lazily
+            self._history_menu.clear()
         for text in self.history:
             label = text.replace("\n", " ")[:60] or "(empty)"
             item = rumps.MenuItem(label, callback=self._copy_history)
