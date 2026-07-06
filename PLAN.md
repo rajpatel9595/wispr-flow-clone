@@ -24,15 +24,19 @@ mode, command mode, 100+ languages. Superwhisper = modes, selected-text context.
 - [x] History: last 20 dictations in menu bar, click to re-copy
 - [x] Startup pre-warm (dummy transcribe so first dictation isn't slow)
 
-## P2 — LLM auto-edits (free via Ollama; wiring done, install optional)
+## P2 — LLM auto-edits (free via Ollama; wiring done, install manual)
 - [x] Formatter prompt v2: self-correction collapse, per-app tone, vocab hints
-- [ ] Install Ollama + llama3.2 and set `"formatter": "ollama"` (user opt-in, ~2GB)
+- [ ] USER: install Ollama.app (ollama.com/download) → then pull llama3.2, set
+      `"formatter": "ollama"`, kickstart (sandbox blocks agent-side binary installs)
 - [ ] Command mode: hold hotkey with selection → "make this formal" transforms it
 
 ## P3 — Product polish
+- [x] Stats (`~/.flowclone_stats.jsonl`): words, WPM, time saved, streak, per-app
+- [x] Dashboard (menu → Dashboard…): offline dark HTML, Wispr-style cards/chart/history
+- [x] /Applications/Flow.app bundle (script launcher, LSUIElement; LaunchAgent runs it)
 - [ ] Auto-learn dictionary (watch post-paste edits) — needs accessibility diffing
 - [ ] Streaming transcription for long dictations (chunked while speaking)
-- [ ] py2app bundle: own icon + name in permission panes, login item
+- [ ] Custom .icns icon for Flow.app
 - [ ] Multilingual: `"model_size": "small", "language": null` auto-detect
 
 ## Key risks / facts

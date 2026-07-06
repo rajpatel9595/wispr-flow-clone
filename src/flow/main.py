@@ -13,7 +13,7 @@ import threading
 import time
 from collections import deque
 
-from flow import context, dictionary
+from flow import context, dashboard, dictionary, stats
 from flow.audio import Recorder
 from flow.config import Config
 from flow.formatter import format_text
@@ -71,10 +71,9 @@ class FlowApp:
                 if text:
                     inject(text, self.cfg.restore_clipboard)
                     self.history.appendleft(text)
-                    print(
-                        f"[flow] {time.perf_counter() - t0:.2f}s "
-                        f"[{self._target_app or '?'}:{tone}]: {text!r}"
-                    )
+                    latency = time.perf_counter() - t0
+                    stats.record(text, len(audio) / self.cfg.sample_rate, latency, self._target_app)
+                    print(f"[flow] {latency:.2f}s [{self._target_app or '?'}:{tone}]: {text!r}")
         except Exception as e:
             print(f"[flow] pipeline error: {e}")
         finally:
@@ -154,6 +153,7 @@ class FlowApp:
         self._app = rumps.App("Flow", title=IDLE, quit_button="Quit Flow")
         self._history_menu = rumps.MenuItem("History")
         self._app.menu = [
+            rumps.MenuItem("Dashboard…", callback=lambda _: dashboard.open_dashboard()),
             self._history_menu,
             f"Hotkey: hold {self.cfg.hotkey}",
             f"Model: {self.cfg.model_size}",
