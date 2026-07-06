@@ -77,6 +77,7 @@ def _ollama(text: str, model: str, tone: str, vocab: str) -> str:
                 tone_hint=_TONE_HINTS[tone], vocab=vocab or "none", text=text
             ),
             "stream": False,
+            "keep_alive": "24h",  # avoid 4-5s cold reload after Ollama's idle unload
         },
         timeout=30,
     )
