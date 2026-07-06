@@ -9,9 +9,16 @@ Threading model:
 """
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 import time
 from collections import deque
+from pathlib import Path
+
+LOCK_PATH = Path.home() / ".flowclone.lock"
+SHOW_TRIGGER = Path.home() / ".flowclone_show_dashboard"
 
 from flow import context, dashboard, dictionary, stats
 from flow.audio import Recorder
@@ -89,6 +96,11 @@ class FlowApp:
             print(f"[flow] ui error: {e}")
 
     def _tick_inner(self) -> None:
+        # double-clicking Flow.app touches SHOW_TRIGGER (see _single_instance)
+        self._trigger_count = getattr(self, "_trigger_count", 0) + 1
+        if self._trigger_count % 10 == 0 and SHOW_TRIGGER.exists():
+            SHOW_TRIGGER.unlink(missing_ok=True)
+            dashboard.show_window()
         state = self._state
         if state == "recording":
             self._hud.set_level(self.recorder.level)
@@ -153,7 +165,7 @@ class FlowApp:
         self._app = rumps.App("Flow", title=IDLE, quit_button="Quit Flow")
         self._history_menu = rumps.MenuItem("History")
         self._app.menu = [
-            rumps.MenuItem("Dashboard…", callback=lambda _: dashboard.open_dashboard()),
+            rumps.MenuItem("Dashboard…", callback=lambda _: dashboard.show_window()),
             self._history_menu,
             f"Hotkey: hold {self.cfg.hotkey}",
             f"Model: {self.cfg.model_size}",
@@ -192,7 +204,29 @@ def _check_permissions() -> None:
         )
 
 
+def _single_instance() -> None:
+    """If Flow already runs, signal it to open the dashboard window and exit.
+
+    This makes double-clicking Flow.app act like opening the app's window
+    instead of spawning a second dictation pipeline (which would double-paste).
+    """
+    if LOCK_PATH.exists():
+        try:
+            pid = int(LOCK_PATH.read_text().strip())
+            os.kill(pid, 0)  # raises if dead
+            comm = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True
+            ).stdout
+            if "python" in comm.lower():
+                SHOW_TRIGGER.touch()
+                sys.exit(0)
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass  # stale lock — take over
+    LOCK_PATH.write_text(str(os.getpid()))
+
+
 def main() -> None:
+    _single_instance()
     FlowApp(Config.load()).run()
 
 

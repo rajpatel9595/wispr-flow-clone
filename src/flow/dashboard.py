@@ -71,6 +71,37 @@ def build_html(agg: dict, recent: list[dict]) -> str:
 
 
 def open_dashboard() -> None:
+    """Fallback: render to file and open in the browser."""
     entries = stats.load()
     OUT_PATH.write_text(build_html(stats.aggregate(entries), entries))
     subprocess.run(["open", str(OUT_PATH)], check=False)
+
+
+_window = None  # kept alive between opens
+
+
+def show_window() -> None:
+    """Native in-app dashboard window (WKWebView). MAIN THREAD ONLY."""
+    global _window
+    from AppKit import NSApplication, NSMakeRect
+    from WebKit import WKWebView
+
+    if _window is None:
+        from AppKit import NSWindow
+
+        rect = NSMakeRect(0, 0, 940, 700)
+        style = 1 | 2 | 4 | 8  # titled | closable | miniaturizable | resizable
+        _window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            rect, style, 2, False
+        )
+        _window.setTitle_("Flow")
+        _window.setReleasedWhenClosed_(False)  # reuse across open/close
+        _window.setContentView_(WKWebView.alloc().initWithFrame_(rect))
+        _window.center()
+
+    entries = stats.load()
+    html_doc = build_html(stats.aggregate(entries), entries)
+    _window.contentView().loadHTMLString_baseURL_(html_doc, None)
+    _window.makeKeyAndOrderFront_(None)
+    # LSUIElement apps don't come forward on their own
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)

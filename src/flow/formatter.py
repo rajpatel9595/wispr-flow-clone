@@ -25,11 +25,13 @@ _COMMANDS = [
 ]
 
 PROMPT = (
-    "You clean up dictated text. Fix punctuation and capitalization, remove "
-    "filler words and false starts. If the speaker corrects themselves "
-    "(\"at 2pm... no wait, 4pm\"), keep only the correction. "
-    "Tone: {tone_hint} "
-    "Known vocabulary: {vocab}. "
+    "You are a dictation transcript cleaner. Apply ONLY these edits:\n"
+    "1. fix punctuation and capitalization\n"
+    "2. delete filler words (um, uh, you know) and false starts\n"
+    "3. if the speaker self-corrects (\"at 2pm... no wait, 4pm\"), keep only the correction\n"
+    "NEVER rephrase, summarize, add words, or swap word choices. Every remaining "
+    "word must appear in the input. Tone context (affects punctuation style only): "
+    "{tone_hint} Known vocabulary: {vocab}. "
     "Output ONLY the cleaned text, no preamble.\n\nDictation: {text}"
 )
 
@@ -78,6 +80,7 @@ def _ollama(text: str, model: str, tone: str, vocab: str) -> str:
             ),
             "stream": False,
             "keep_alive": "24h",  # avoid 4-5s cold reload after Ollama's idle unload
+            "options": {"temperature": 0},  # deterministic, least creative
         },
         timeout=30,
     )

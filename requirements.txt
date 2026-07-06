@@ -8,3 +8,4 @@ requests>=2.31
 anthropic>=0.40   # only needed for formatter=claude
 pytest>=8.0
 pyobjc-framework-Quartz>=10
+pyobjc-framework-WebKit>=10
