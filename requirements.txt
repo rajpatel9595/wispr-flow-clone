@@ -1,0 +1,10 @@
+faster-whisper>=1.0
+sounddevice>=0.4.6
+numpy>=1.26
+pynput>=1.7.6
+pyperclip>=1.8
+rumps>=0.4
+requests>=2.31
+anthropic>=0.40   # only needed for formatter=claude
+pytest>=8.0
+pyobjc-framework-Quartz>=10
