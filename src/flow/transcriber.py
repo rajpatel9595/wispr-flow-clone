@@ -26,6 +26,10 @@ class Transcriber:
                 cpu_threads=os.cpu_count() or 4,
             )
 
+    def warm_up(self) -> None:
+        """First inference after load is slow (graph init) — burn it at startup."""
+        self.transcribe(np.zeros(16000, dtype=np.float32))
+
     def transcribe(self, audio: np.ndarray, initial_prompt: str | None = None) -> str:
         if audio.size < 1600:  # <0.1 s — accidental tap
             return ""

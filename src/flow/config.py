@@ -10,7 +10,7 @@ CONFIG_PATH = Path.home() / ".flowclone.json"
 
 @dataclass
 class Config:
-    model_size: str = "base.en"      # tiny.en | base.en | small.en | medium | large-v3
+    model_size: str = "small.en"     # tiny.en | base.en | small.en | medium | large-v3
     hotkey: str = "alt_r"            # pynput key name, hold-to-talk
     language: str = "en"
     formatter: str = "none"          # none | ollama | claude

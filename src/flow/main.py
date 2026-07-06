@@ -4,14 +4,16 @@ Threading model:
 - pynput listener thread: sets self._state on key press/release.
 - worker thread: runs transcribe/format/inject, then resets self._state.
 - main thread (rumps): a Timer polls self._state and drives ALL UI (menu bar
-  title + the floating HUD). AppKit is not thread-safe, so UI only ever changes
+  title, HUD, sounds). AppKit is not thread-safe, so UI only ever changes
   here — the other threads just flip a string.
 """
 from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 
+from flow import context, dictionary
 from flow.audio import Recorder
 from flow.config import Config
 from flow.formatter import format_text
@@ -21,6 +23,7 @@ from flow.injector import inject
 from flow.transcriber import Transcriber
 
 IDLE, RECORDING, BUSY = "🎤", "🔴", "⚙️"
+MAX_HISTORY = 20
 
 
 class FlowApp:
@@ -28,14 +31,19 @@ class FlowApp:
         self.cfg = cfg
         self.recorder = Recorder(cfg.sample_rate)
         self.transcriber = Transcriber(cfg.model_size, cfg.language)
+        self.vocab = dictionary.load()
+        self.history: deque[str] = deque(maxlen=MAX_HISTORY)
         self._state = "idle"        # set by any thread; read by the main-thread tick
         self._last_state = None
+        self._target_app = ""       # frontmost app captured at key press
         self._app = None            # rumps app, set in run()
         self._hud = Hud()
+        self._history_menu = None
 
     # --- pipeline (background threads) ---------------------------------------
 
     def _on_press(self) -> None:
+        self._target_app = context.frontmost_app()
         self._state = "recording"
         self.recorder.start()
 
@@ -47,11 +55,26 @@ class FlowApp:
     def _process(self, audio) -> None:
         try:
             t0 = time.perf_counter()
-            raw = self.transcriber.transcribe(audio)
+            raw = self.transcriber.transcribe(
+                audio, initial_prompt=dictionary.initial_prompt(self.vocab)
+            )
             if raw:
-                text = format_text(raw, self.cfg.formatter, self.cfg.ollama_model)
-                inject(text, self.cfg.restore_clipboard)
-                print(f"[flow] {time.perf_counter() - t0:.2f}s: {text!r}")
+                raw = dictionary.apply(raw, self.vocab)
+                tone = context.tone_for(self._target_app)
+                text = format_text(
+                    raw,
+                    self.cfg.formatter,
+                    self.cfg.ollama_model,
+                    tone=tone,
+                    vocab=", ".join(self.vocab.get("words") or []),
+                )
+                if text:
+                    inject(text, self.cfg.restore_clipboard)
+                    self.history.appendleft(text)
+                    print(
+                        f"[flow] {time.perf_counter() - t0:.2f}s "
+                        f"[{self._target_app or '?'}:{tone}]: {text!r}"
+                    )
         except Exception as e:
             print(f"[flow] pipeline error: {e}")
         finally:
@@ -62,18 +85,52 @@ class FlowApp:
     def _tick(self, _timer) -> None:
         """Runs on the rumps main thread — safe to touch AppKit/HUD here."""
         state = self._state
+        if state == "recording":
+            self._hud.set_level(self.recorder.level)
         if state == self._last_state:
             return
         self._last_state = state
         if state == "recording":
             self._app.title = RECORDING
             self._hud.listening()
+            self._play("Tink")
         elif state == "busy":
             self._app.title = BUSY
             self._hud.busy()
+            self._play("Pop")
         else:
             self._app.title = IDLE
             self._hud.hide()
+            self._refresh_history()
+
+    @staticmethod
+    def _play(name: str) -> None:
+        try:
+            from AppKit import NSSound
+
+            s = NSSound.soundNamed_(name)
+            s.setVolume_(0.3)
+            s.play()
+        except Exception:
+            pass
+
+    def _refresh_history(self) -> None:
+        import rumps
+
+        if self._history_menu is None:
+            return
+        self._history_menu.clear()
+        for text in self.history:
+            label = text.replace("\n", " ")[:60] or "(empty)"
+            item = rumps.MenuItem(label, callback=self._copy_history)
+            item._full_text = text
+            self._history_menu.add(item)
+
+    @staticmethod
+    def _copy_history(item) -> None:
+        import pyperclip
+
+        pyperclip.copy(item._full_text)
 
     def run(self) -> None:
         import rumps  # lazy: macOS only
@@ -81,14 +138,20 @@ class FlowApp:
         _check_permissions()
         print(f"[flow] loading whisper model '{self.cfg.model_size}'...")
         self.transcriber.load()
+        self.transcriber.warm_up()
         print(f"[flow] ready — hold '{self.cfg.hotkey}' to dictate")
 
         hotkey = HoldToTalk(self.cfg.hotkey, self._on_press, self._on_release)
         hotkey.start()
 
         self._app = rumps.App("Flow", title=IDLE, quit_button="Quit Flow")
-        self._app.menu = [f"Hotkey: hold {self.cfg.hotkey}", f"Model: {self.cfg.model_size}"]
-        rumps.Timer(self._tick, 0.1).start()
+        self._history_menu = rumps.MenuItem("History")
+        self._app.menu = [
+            self._history_menu,
+            f"Hotkey: hold {self.cfg.hotkey}",
+            f"Model: {self.cfg.model_size}",
+        ]
+        rumps.Timer(self._tick, 0.05).start()  # 20fps: waveform + state changes
         self._app.run()
 
 

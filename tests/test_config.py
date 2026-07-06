@@ -6,7 +6,7 @@ from flow.config import Config
 
 def test_defaults():
     cfg = Config()
-    assert cfg.model_size == "base.en"
+    assert cfg.model_size == "small.en"
     assert cfg.formatter == "none"
 
 

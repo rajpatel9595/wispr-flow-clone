@@ -86,26 +86,37 @@ class Hud:
         self._panel = panel
 
     def _animate(self, mode: str) -> None:
-        from Quartz import CABasicAnimation
+        from Quartz import CABasicAnimation, CATransform3DIdentity
 
         for i, bar in enumerate(self._bars):
             bar.removeAllAnimations()
+            bar.setOpacity_(1.0)
             if mode == "listening":
-                anim = CABasicAnimation.animationWithKeyPath_("transform.scale.y")
-                anim.setFromValue_(0.3)
-                anim.setToValue_(1.0)
-                anim.setDuration_(0.38)
-                anim.setTimeOffset_(i * 0.11)  # stagger for a rolling-wave look
-                bar.setOpacity_(1.0)
-            else:  # transcribing: bars hold shape, gently pulse
-                anim = CABasicAnimation.animationWithKeyPath_("opacity")
-                anim.setFromValue_(0.9)
-                anim.setToValue_(0.25)
-                anim.setDuration_(0.55)
-                anim.setTimeOffset_(i * 0.07)
+                continue  # bars are driven live by set_level()
+            bar.setTransform_(CATransform3DIdentity)
+            anim = CABasicAnimation.animationWithKeyPath_("opacity")  # busy: pulse
+            anim.setFromValue_(0.9)
+            anim.setToValue_(0.25)
+            anim.setDuration_(0.55)
+            anim.setTimeOffset_(i * 0.07)
             anim.setAutoreverses_(True)
             anim.setRepeatCount_(1e9)
             bar.addAnimation_forKey_(anim, "pulse")
+
+    def set_level(self, level: float) -> None:
+        """Drive bar heights from live mic loudness (0..1). Main thread only."""
+        if self._mode != "listening" or not self._bars:
+            return
+        import random
+
+        from Quartz import CATransaction, CATransform3DMakeScale
+
+        CATransaction.begin()
+        CATransaction.setAnimationDuration_(0.06)  # snappy but not jittery
+        for bar in self._bars:
+            scale = 0.22 + min(1.0, level * random.uniform(0.75, 1.25)) * 0.78
+            bar.setTransform_(CATransform3DMakeScale(1.0, scale, 1.0))
+        CATransaction.commit()
 
     def _show(self, mode: str) -> None:
         if self._panel is None:

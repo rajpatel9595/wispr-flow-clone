@@ -1,39 +1,42 @@
-# Build plan
+# Build plan — target: Wispr Flow parity, 100% free & local
 
-## M0 — Scaffold ✅
-Project layout, docs, Claude Code agents/skills, config system.
+Feature map from research (wisprflow.ai/features, superwhisper.com):
+Wispr = auto-edits (fillers/punctuation), per-app tone, personal dictionary +
+auto-learn, snippets, self-correction ("no wait, make it 4pm"), whisper-quiet
+mode, command mode, 100+ languages. Superwhisper = modes, selected-text context.
 
-## M1 — Core pipeline (current)
-- [x] Audio capture (sounddevice, 16 kHz mono float32)
-- [x] Local transcription (faster-whisper, lazy-loaded)
-- [x] Hold-to-talk global hotkey (pynput, right Option)
-- [x] Text injection (clipboard + ⌘V via osascript, clipboard restore)
-- [x] Menu bar app (rumps) with recording state
-- [ ] Verify end-to-end on real mic; tune VAD/silence trimming
-- [ ] Handle rapid press/release (<300 ms) — ignore, don't transcribe
+## Done
+- [x] M0/M1 core: hotkey → mic → faster-whisper → format → paste; menu bar; HUD pill
+- [x] LaunchAgent always-on (`com.rajpatel.flowclone`), logs `~/Library/Logs/flowclone.log`
+- [x] Native arm64 (uv CPython 3.12) — 6x realtime; CGEvent paste; permission self-check
 
-## M2 — Smart formatting
-- [ ] Filler-word removal + punctuation/caps in `none` mode (regex baseline)
-- [ ] Ollama formatter with strict "output only the cleaned text" prompt
-- [ ] Claude formatter (claude-haiku-4-5, low latency)
-- [ ] Per-app tone: detect frontmost app (osascript), casual for Slack/iMessage, neutral elsewhere
-- [ ] Spoken commands: "new line", "period", "scratch that"
+## P1 — Feel & accuracy (this session)
+- [x] Voice-reactive HUD waveform (RMS from audio callback → bars)
+- [x] Whisper-quiet mode: peak-normalize audio before transcription (auto-gain)
+- [x] `small.en` model (native arm64 makes it fast enough)
+- [x] Personal dictionary `~/.flowclone_dict.json`: words → Whisper initial_prompt
+      bias + forced replacements
+- [x] Snippets: "insert my email" → expansion (dictionary file)
+- [x] Spoken commands: new line/paragraph, punctuation words, "scratch that"
+- [x] Per-app tone (NSWorkspace frontmost app): casual (Slack/Messages/Discord),
+      verbatim-code (terminals/IDEs), default prose
+- [x] Sound cues on record start/stop (NSSound)
+- [x] History: last 20 dictations in menu bar, click to re-copy
+- [x] Startup pre-warm (dummy transcribe so first dictation isn't slow)
 
-## M3 — Personal dictionary & context
-- [ ] User dictionary (`~/.flowclone_dict.json`) — proper nouns, jargon → Whisper `initial_prompt` + post-replace
-- [ ] Auto-learn corrections (diff injected text vs. what user edits — stretch)
+## P2 — LLM auto-edits (free via Ollama; wiring done, install optional)
+- [x] Formatter prompt v2: self-correction collapse, per-app tone, vocab hints
+- [ ] Install Ollama + llama3.2 and set `"formatter": "ollama"` (user opt-in, ~2GB)
+- [ ] Command mode: hold hotkey with selection → "make this formal" transforms it
 
-## M4 — Polish
-- [x] Floating on-screen HUD pill (non-activating NSPanel) showing Listening/Transcribing state
-- [ ] Streaming/partial transcription for long dictations
-- [ ] Latency target: <1.5 s release-to-paste for 10 s clips (`small.en` on Apple Silicon)
-- [ ] Sound cues on start/stop
-- [ ] History window (last 20 dictations, click to re-copy)
-- [x] Launch at login (LaunchAgent: `~/Library/LaunchAgents/com.rajpatel.flowclone.plist`, logs at `~/Library/Logs/flowclone.log`)
-- [x] Native arm64 venv (uv-managed CPython 3.12 — was x86_64 under Rosetta, ~6x realtime now)
-- [ ] Package with py2app
+## P3 — Product polish
+- [ ] Auto-learn dictionary (watch post-paste edits) — needs accessibility diffing
+- [ ] Streaming transcription for long dictations (chunked while speaking)
+- [ ] py2app bundle: own icon + name in permission panes, login item
+- [ ] Multilingual: `"model_size": "small", "language": null` auto-detect
 
-## Key risks
-- **Fn key can't be captured** by pynput on macOS → we use right Option instead.
-- **Secure input fields** (password boxes) block synthetic ⌘V — detect and no-op.
-- **Model cold start** (~2–5 s) → pre-load model at app launch, not first use.
+## Key risks / facts
+- pynput can't see Fn key → alt_r. CGEvent paste needs Accessibility; permissions
+  are PER-BINARY (changing python binaries resets them — bit us once).
+- rumps/AppKit calls only on main thread; pipeline on worker thread.
+- Whisper hallucinates "..." on trailing silence (stripped in transcriber).

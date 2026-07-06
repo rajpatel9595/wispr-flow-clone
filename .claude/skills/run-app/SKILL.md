@@ -1,21 +1,14 @@
 ---
 name: run-app
-description: Run the Flow Clone menu bar app locally and walk through the manual smoke test. Use when asked to run, launch, or manually verify the dictation app.
+description: Restart/verify the always-on Flow Clone LaunchAgent and walk the manual smoke test. Use when asked to run, restart, launch, or manually verify the dictation app.
 ---
 
 # Run & smoke-test Flow Clone
 
-1. Ensure venv + deps:
-   ```bash
-   cd wispr-flow-clone
-   [ -d .venv ] || python3 -m venv .venv
-   source .venv/bin/activate && pip install -q -r requirements.txt
-   ```
-2. Launch in foreground so logs are visible: `python -m flow`
-   - First run downloads the Whisper model (~150 MB) — expect a delay, tell the user.
-3. If the hotkey or mic does nothing, do NOT debug code first — instruct the user to grant the terminal Microphone, Accessibility, and Input Monitoring in System Settings → Privacy & Security, then relaunch.
-4. Manual smoke test (user performs, you narrate):
-   - Menu bar shows 🎤. Focus a text field (Notes.app).
-   - Hold right Option, say "hello world testing one two three", release.
-   - Expect: icon 🔴 while held, ⚙️ briefly, text appears in Notes, clipboard restored.
-5. Report: model load time, release-to-paste latency (from logs), and any stderr.
+The app runs permanently as LaunchAgent `com.rajpatel.flowclone` — do NOT start a second instance with `python -m flow` (double-paste). To apply code/config changes:
+
+1. `launchctl kickstart -k gui/501/com.rajpatel.flowclone`
+2. Watch `~/Library/Logs/flowclone.log` until it prints `permissions OK` and `ready`. If it prints MISSING permissions: user must enable **python3.12** in System Settings → Privacy & Security → Accessibility + Input Monitoring, then kickstart again. Permissions are per-binary — if the venv python changed, they MUST be re-granted (remove stale entries with −, the app re-registers itself).
+3. Smoke test (user performs): focus Notes.app → hold right Option → speak → release. Expect: Tink sound, black pill with voice-reactive bars, ⚙️ + Pop on release, text pasted <1.5 s, entry in menu bar History.
+4. Feature checks: say "hello comma world period" (punctuation), "scratch that" (discard), "insert my email" (snippet), dictate in a terminal (verbatim tone — no added period).
+5. Report release-to-paste latency and tone tag from the log line (`[App:tone]: text`).
