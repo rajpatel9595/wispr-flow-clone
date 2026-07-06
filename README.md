@@ -2,6 +2,8 @@
 
 A free, local, privacy-first clone of [Wispr Flow](https://wisprflow.ai): hold a key, speak, release — clean formatted text appears in whatever app has focus. Runs permanently in your menu bar. Audio never leaves your machine unless you opt into a cloud formatter.
 
+![Flow dashboard](docs/dashboard.png)
+
 ## Features (Wispr parity, all free)
 
 - **Hold-to-talk anywhere** — hold **right Option (⌥)**, speak, release. Works in every app.
