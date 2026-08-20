@@ -21,8 +21,16 @@ _BACKING_BUFFERED = 2             # NSBackingStoreBuffered
 _LEVEL_FLOATING = 3               # NSFloatingWindowLevel
 
 _W, _H = 74.0, 28.0
+_TW, _TH = 520.0, 30.0   # live-transcript bar, sits just above the pill
+_TAIL = 80               # chars of transcript kept visible (head-truncated)
 _BAR_W, _GAP = 3.0, 4.0
 _BAR_HEIGHTS = (7.0, 12.0, 17.0, 12.0, 7.0)
+
+
+def tail(text: str, limit: int = _TAIL) -> str:
+    """Last `limit` chars, ellipsised at the head — the live tail is what matters."""
+    text = " ".join(text.split())
+    return text if len(text) <= limit else "…" + text[-limit:]
 
 
 class Hud:
@@ -30,6 +38,9 @@ class Hud:
         self._panel = None
         self._bars: list = []
         self._mode: str | None = None
+        self._text_panel = None
+        self._text_field = None
+        self._text: str = ""
 
     def _build(self) -> None:
         from AppKit import NSColor, NSPanel, NSScreen, NSView
@@ -85,6 +96,69 @@ class Hud:
 
         self._panel = panel
 
+    def _build_text_bar(self) -> None:
+        """Transcript bar above the pill. Also NON-ACTIVATING: if this stole
+        focus, the injector's Cmd+V would paste in here, not the user's app."""
+        from AppKit import NSColor, NSFont, NSPanel, NSScreen, NSTextField, NSView
+        from Foundation import NSMakeRect
+
+        vis = NSScreen.mainScreen().visibleFrame()
+        x = vis.origin.x + (vis.size.width - _TW) / 2.0
+        y = vis.origin.y + 8.0 + _H + 8.0  # directly above the pill
+        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, _TW, _TH),
+            _BORDERLESS | _NONACTIVATING_PANEL,
+            _BACKING_BUFFERED,
+            False,
+        )
+        panel.setLevel_(_LEVEL_FLOATING)
+        panel.setOpaque_(False)
+        panel.setBackgroundColor_(NSColor.clearColor())
+        panel.setHasShadow_(True)
+        panel.setIgnoresMouseEvents_(True)
+        panel.setBecomesKeyOnlyIfNeeded_(True)
+
+        bg = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, _TW, _TH))
+        bg.setWantsLayer_(True)
+        bg.layer().setCornerRadius_(_TH / 2.0)
+        bg.layer().setMasksToBounds_(True)
+        bg.layer().setBackgroundColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.92).CGColor()
+        )
+        bg.layer().setBorderWidth_(1.0)
+        bg.layer().setBorderColor_(
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.08).CGColor()
+        )
+        panel.setContentView_(bg)
+
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(12, 6, _TW - 24, 18))
+        field.setEditable_(False)
+        field.setSelectable_(False)
+        field.setBezeled_(False)
+        field.setDrawsBackground_(False)
+        field.setTextColor_(NSColor.whiteColor())
+        field.setFont_(NSFont.systemFontOfSize_(13.0))
+        field.setAlignment_(2)  # NSTextAlignmentCenter (AppKit == 2)
+        bg.addSubview_(field)
+
+        self._text_panel, self._text_field = panel, field
+
+    def set_text(self, text: str) -> None:
+        """Show live transcript above the pill. Main thread only."""
+        text = tail(text)
+        if text == self._text:
+            return
+        if not text:
+            if self._text_panel is not None:
+                self._text_panel.orderOut_(None)
+            self._text = text
+            return
+        if self._text_panel is None:
+            self._build_text_bar()
+        self._text_field.setStringValue_(text)
+        self._text_panel.orderFront_(None)  # NOT makeKey — must not activate
+        self._text = text  # only after a successful update, so failures retry
+
     def _animate(self, mode: str) -> None:
         from Quartz import CABasicAnimation, CATransform3DIdentity
 
@@ -136,3 +210,6 @@ class Hud:
         if self._panel is not None:
             self._panel.orderOut_(None)
             self._mode = None
+        if self._text_panel is not None:
+            self._text_panel.orderOut_(None)
+        self._text = ""

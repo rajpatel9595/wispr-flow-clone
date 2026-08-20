@@ -10,13 +10,19 @@ CONFIG_PATH = Path.home() / ".flowclone.json"
 
 @dataclass
 class Config:
-    model_size: str = "small.en"     # tiny.en | base.en | small.en | medium | large-v3
+    backend: str = "parakeet"        # parakeet (MLX/GPU) | whisper (faster-whisper/CPU)
+    parakeet_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
+    spell_numbers: bool = False      # parakeet says "twenty two"; False -> "22"
+    stream: bool = True              # transcribe while speaking (parakeet only)
+    stream_finalize_secs: float = 60.0  # <= this, re-transcribe fully for accuracy
+    model_size: str = "small.en"     # whisper backend only: tiny.en|base.en|small.en|medium
     hotkey: str = "alt_r"            # pynput key name, hold-to-talk
     language: str = "en"
     formatter: str = "none"          # none | ollama | claude
     ollama_model: str = "llama3.2"
-    sample_rate: int = 16000
     restore_clipboard: bool = True
+    # No sample_rate knob: both backends' feature extractors are fixed at
+    # 16 kHz, so it could only ever be set wrong. See audio.SAMPLE_RATE.
 
     @classmethod
     def load(cls) -> "Config":

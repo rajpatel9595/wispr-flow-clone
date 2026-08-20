@@ -7,7 +7,8 @@ A free, local, privacy-first clone of [Wispr Flow](https://wisprflow.ai): hold a
 ## Features (Wispr parity, all free)
 
 - **Hold-to-talk anywhere** — hold **right Option (⌥)**, speak, release. Works in every app.
-- **Local transcription** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small.en`, native arm64, ~6× realtime on Apple Silicon (a 5 s dictation lands in <1 s).
+- **Local transcription** — [parakeet-mlx](https://github.com/senstella/parakeet-mlx) `tdt-0.6b-v3` running on the Apple GPU via MLX: ~33× realtime (14 s of speech transcribes in 0.42 s). [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small.en` on CPU remains available via `"backend": "whisper"`.
+- **Streaming transcription** — text is recognised *while you speak* and shown live above the pill, so release-to-paste stays fast no matter how long you talk.
 - **Voice-reactive HUD** — Wispr-style black pill above the Dock; waveform bars follow your actual voice.
 - **Per-app tone** — casual in Slack/Messages/Discord, verbatim (no invented punctuation) in terminals/IDEs, clean prose everywhere else.
 - **Personal dictionary** — `~/.flowclone_dict.json`: your names/jargon bias recognition; forced replacements fix stubborn mishears.
@@ -22,13 +23,13 @@ A free, local, privacy-first clone of [Wispr Flow](https://wisprflow.ai): hold a
 
 ```
 hold ⌥ ─▶ hotkey.py ─▶ audio.py ─▶ transcriber.py ─▶ dictionary.py ─▶ formatter.py ─▶ injector.py ─▶ paste
-          pynput       mic+RMS      faster-whisper     vocab/snippets    commands/tone     CGEvent ⌘V
-          listener     auto-gain    small.en int8      replacements      regex or LLM      clipboard swap
+          pynput       mic+RMS      parakeet-mlx       vocab/snippets    commands/tone     CGEvent ⌘V
+          listener     auto-gain    Apple GPU (MLX)    replacements      regex or LLM      clipboard swap
                                          ▲                                    ▲
-                              initial_prompt bias                   context.py (frontmost app → tone)
+                          streams while you speak                context.py (frontmost app → tone)
 ```
 
-Three threads: pynput listener (key events), worker (transcribe→paste), main (rumps menu bar + HUD + sounds — all AppKit stays here, fed by a 20 fps timer).
+Threads: pynput listener (key events), one dictation thread per take (started on **press** — streams audio to the model while you speak, then finalises and pastes), and the rumps main thread (menu bar + HUD + sounds — all AppKit stays here, fed by a 20 fps timer). All model calls are funnelled onto a single ASR thread, because MLX streams are thread-local.
 
 ## Setup
 
@@ -57,7 +58,7 @@ Install [Ollama](https://ollama.com/download) → `ollama pull llama3.2` → set
 
 ## Config
 
-`~/.flowclone.json`: `model_size`, `hotkey` (pynput name; Fn is impossible on macOS), `formatter` (`none|ollama|claude`), `restore_clipboard`.
+`~/.flowclone.json`: `backend` (`parakeet|whisper`), `parakeet_model`, `stream` (live transcription), `stream_finalize_secs` (under this, re-transcribe in one pass for accuracy), `spell_numbers`, `model_size` (whisper only), `hotkey` (pynput name; Fn is impossible on macOS), `formatter` (`none|ollama|claude`), `restore_clipboard`.
 `~/.flowclone_dict.json`: `words` (recognition bias), `replacements`, `snippets`.
 
 ## Development

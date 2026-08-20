@@ -2,6 +2,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-tests/fixtures/*.wav
-tests/fixtures/*.aiff
+# local eval recordings (your voice + ground-truth text) — never commit these
+tests/fixtures/
 .DS_Store
