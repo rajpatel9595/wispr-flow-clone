@@ -7,6 +7,13 @@ from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".flowclone.json"
 
+# Config.load() writes every default into the file on first run, so the old
+# multilingual default is pinned in existing configs even though the user never
+# chose it. Loading swaps it for the current default (a deliberately chosen
+# non-Latin language keeps it — that is the one case v3 is the right model).
+_RETIRED_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v3"
+_NON_LATIN_LANGS = frozenset({"ru", "uk", "bg", "el"})
+
 
 @dataclass
 class Config:
@@ -32,7 +39,15 @@ class Config:
         if CONFIG_PATH.exists():
             known = {f.name for f in fields(cls)}
             data = {k: v for k, v in json.loads(CONFIG_PATH.read_text()).items() if k in known}
-            return cls(**data)
+            cfg = cls(**data)
+            if (
+                cfg.parakeet_model == _RETIRED_PARAKEET
+                and cfg.language not in _NON_LATIN_LANGS
+            ):
+                cfg.parakeet_model = cls.parakeet_model
+                cfg.save()
+                print(f"[flow] config: parakeet_model upgraded to {cfg.parakeet_model}")
+            return cfg
         cfg = cls()
         cfg.save()
         return cfg
