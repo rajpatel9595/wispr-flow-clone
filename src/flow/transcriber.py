@@ -31,7 +31,12 @@ import numpy as np
 
 from flow.audio import SAMPLE_RATE, gain_for
 
-DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v3"
+DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v2"  # English-only; see Config
+
+# This app is English-only. A transcript dominated by non-Latin letters can
+# only mean the model auto-detected the wrong language, never that the user
+# spoke it.
+_LATIN_MAX = 0x024F  # end of Latin Extended-B: keeps café, naïve, Straße
 
 _MIN_TRANSCRIBE_SAMPLES = SAMPLE_RATE // 10  # <0.1 s — an accidental tap
 
@@ -90,6 +95,19 @@ def digits(text: str) -> str:
     )
 
 
+def foreign_script(text: str) -> bool:
+    """True if most letters in `text` are outside Latin script.
+
+    The multilingual parakeet v3 has no language pin, so a short, quiet or
+    noisy English take sometimes comes back as Russian/Bulgarian/Greek. Pasting
+    that into the user's document is worse than pasting nothing.
+    """
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    return sum(ord(c) > _LATIN_MAX for c in letters) * 2 > len(letters)
+
+
 # --- backends -----------------------------------------------------------------
 
 
@@ -137,6 +155,12 @@ class _ParakeetBackend:
         return session
 
     def clean(self, text: str) -> str:
+        if foreign_script(text):
+            print(
+                f"[flow] dropped {text!r}: the model auto-detected another language. "
+                f"Set parakeet_model to the English-only {DEFAULT_PARAKEET}."
+            )
+            return ""
         return text if self.spell_numbers else digits(text)
 
 
@@ -145,9 +169,8 @@ class _WhisperBackend:
 
     streams = False
 
-    def __init__(self, model_size: str = "small.en", language: str = "en"):
+    def __init__(self, model_size: str = "small.en"):
         self.model_size = model_size
-        self.language = language
         self._model = None
 
     def load(self) -> None:
@@ -167,7 +190,7 @@ class _WhisperBackend:
     def transcribe(self, audio: np.ndarray, initial_prompt: str | None = None) -> str:
         segments, _info = self._model.transcribe(
             audio,
-            language=self.language,
+            language="en",  # English only; never let whisper auto-detect
             beam_size=1,
             vad_filter=True,
             condition_on_previous_text=False,  # dictations are short; big speedup
@@ -302,7 +325,6 @@ class Transcriber:
         *,
         backend: str = "parakeet",
         model_size: str = "small.en",
-        language: str = "en",
         parakeet_model: str = DEFAULT_PARAKEET,
         spell_numbers: bool = False,
     ):
@@ -311,7 +333,7 @@ class Transcriber:
             self._backend: Backend = _ParakeetBackend(parakeet_model, spell_numbers)
             self.label = parakeet_model.rsplit("/", 1)[-1]
         else:
-            self._backend = _WhisperBackend(model_size, language)
+            self._backend = _WhisperBackend(model_size)
             self.label = model_size
         # One thread owns the model for its whole lifetime (see THREADING above).
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="asr")
@@ -322,7 +344,6 @@ class Transcriber:
         return cls(
             backend=cfg.backend,
             model_size=cfg.model_size,
-            language=cfg.language,
             parakeet_model=cfg.parakeet_model,
             spell_numbers=cfg.spell_numbers,
         )

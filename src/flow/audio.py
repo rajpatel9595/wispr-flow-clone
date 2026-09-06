@@ -13,6 +13,8 @@ audio of take B and close B's microphone out from under it.
 """
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 
 _MAX_GAIN = 12.0  # cap auto-gain so silence doesn't amplify into noise
@@ -71,31 +73,38 @@ class Recorder:
         self.level: float = 0.0  # smoothed mic loudness 0..1, read by the HUD
         self._take: Take | None = None
         self._stream = None
+        # start() runs on the hotkey listener thread, stop() on each dictation's
+        # own thread. Without mutual exclusion, a press landing while the
+        # previous take's stop() is inside the (multi-ms) PortAudio close sees
+        # _stream still non-None, skips reopening the mic, and then records
+        # nothing — the mic closes out from under the brand-new take.
+        self._lock = threading.Lock()
 
     def start(self) -> Take:
         """Begin a new take; audio flows to it from here on. Returns the take."""
         import sounddevice as sd  # lazy: needs mic permission / PortAudio
 
-        take = Take()
-        self._take = take
-        self.level = 0.0
-        if self._stream is not None:
-            return take  # already capturing — just retarget the frames
+        with self._lock:
+            take = Take()
+            self._take = take
+            self.level = 0.0
+            if self._stream is not None:
+                return take  # already capturing — just retarget the frames
 
-        def callback(indata, _frames, _time, _status):
-            mono = indata[:, 0]
-            current = self._take
-            if current is not None:
-                current._append(mono.copy())
-            rms = float(np.sqrt(np.mean(mono**2)))
-            # scale: normal speech rms ~0.02-0.15; smooth for a fluid waveform
-            self.level = 0.65 * self.level + 0.35 * min(1.0, rms * 9.0)
+            def callback(indata, _frames, _time, _status):
+                mono = indata[:, 0]
+                current = self._take
+                if current is not None:
+                    current._append(mono.copy())
+                rms = float(np.sqrt(np.mean(mono**2)))
+                # scale: normal speech rms ~0.02-0.15; smooth for a fluid waveform
+                self.level = 0.65 * self.level + 0.35 * min(1.0, rms * 9.0)
 
-        self._stream = sd.InputStream(
-            samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
-        )
-        self._stream.start()
-        return take
+            self._stream = sd.InputStream(
+                samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
+            )
+            self._stream.start()
+            return take
 
     def stop(self, take: Take | None = None) -> np.ndarray:
         """End `take` and return its audio. Idempotent.
@@ -103,13 +112,14 @@ class Recorder:
         The microphone is only closed if `take` is still the live one, so a late
         stop() from a previous dictation cannot cut off the current recording.
         """
-        if take is None:
-            take = self._take
-        if take is not None and self._take is take:
-            self._take = None
-        if self._take is None and self._stream is not None:
-            self.level = 0.0
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+        with self._lock:
+            if take is None:
+                take = self._take
+            if take is not None and self._take is take:
+                self._take = None
+            if self._take is None and self._stream is not None:
+                self.level = 0.0
+                self._stream.stop()
+                self._stream.close()
+                self._stream = None
         return take.audio() if take is not None else np.zeros(0, dtype=np.float32)
