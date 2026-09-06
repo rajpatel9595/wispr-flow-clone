@@ -35,8 +35,11 @@ def test_load_upgrades_the_retired_multilingual_model(tmp_path, monkeypatch):
     assert json.loads(p.read_text())["parakeet_model"] == Config.parakeet_model
 
 
-def test_load_keeps_v3_for_a_non_latin_language(tmp_path, monkeypatch):
+def test_load_drops_the_retired_language_key(tmp_path, monkeypatch):
+    """English only: an old `language` entry is ignored and not written back."""
     p = tmp_path / "cfg.json"
-    p.write_text(json.dumps({"parakeet_model": "mlx-community/parakeet-tdt-0.6b-v3", "language": "ru"}))
+    p.write_text(json.dumps({"language": "ru", "parakeet_model": "mlx-community/parakeet-tdt-0.6b-v3"}))
     monkeypatch.setattr(config_mod, "CONFIG_PATH", p)
-    assert Config.load().parakeet_model.endswith("-v3")
+    cfg = Config.load()
+    assert not hasattr(cfg, "language")
+    assert "language" not in json.loads(p.read_text())

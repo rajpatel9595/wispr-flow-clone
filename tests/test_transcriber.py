@@ -28,14 +28,11 @@ class TestParakeetClean:
     """v3 auto-detected the wrong language on quiet English; never paste that."""
 
     def test_drops_non_latin_output_for_english(self, capsys):
-        assert _ParakeetBackend(language="en").clean("Привет как дела") == ""
+        assert _ParakeetBackend().clean("Привет как дела") == ""
         assert "auto-detected another language" in capsys.readouterr().out
 
     def test_keeps_english_and_converts_numbers(self):
-        assert _ParakeetBackend(language="en").clean("step three") == "step 3"
-
-    def test_keeps_cyrillic_when_the_user_dictates_russian(self):
-        assert _ParakeetBackend(language="ru").clean("Привет") == "Привет"
+        assert _ParakeetBackend().clean("step three") == "step 3"
 
 
 class TestDefaults:

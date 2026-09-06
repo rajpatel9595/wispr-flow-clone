@@ -37,7 +37,7 @@ mode, command mode, 100+ languages. Superwhisper = modes, selected-text context.
 - [ ] Auto-learn dictionary (watch post-paste edits) — needs accessibility diffing
 - [ ] Streaming transcription for long dictations (chunked while speaking)
 - [ ] Custom .icns icon for Flow.app
-- [ ] Multilingual: `"model_size": "small", "language": null` auto-detect
+- [x] ~~Multilingual~~ — dropped on purpose: English only (v3 auto-detect pasted Cyrillic/Greek)
 
 ## Key risks / facts
 - pynput can't see Fn key → alt_r. CGEvent paste needs Accessibility; permissions
