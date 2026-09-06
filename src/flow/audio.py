@@ -91,9 +91,20 @@ class Recorder:
             # scale: normal speech rms ~0.02-0.15; smooth for a fluid waveform
             self.level = 0.65 * self.level + 0.35 * min(1.0, rms * 9.0)
 
-        self._stream = sd.InputStream(
-            samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
-        )
+        def open_stream():
+            return sd.InputStream(
+                samplerate=self.sample_rate, channels=1, dtype="float32", callback=callback
+            )
+
+        try:
+            self._stream = open_stream()
+        except sd.PortAudioError:
+            # The default input device changed since PortAudio last scanned
+            # (e.g. AirPods connected/disconnected): its device list is stale
+            # and opening fails with -9986. Rescan and retry once.
+            sd._terminate()
+            sd._initialize()
+            self._stream = open_stream()
         self._stream.start()
         return take
 

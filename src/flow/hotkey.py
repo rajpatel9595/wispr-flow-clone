@@ -14,15 +14,27 @@ class HoldToTalk:
         self._held = False
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
 
+    # An exception escaping a pynput callback STOPS THE LISTENER — the app then
+    # looks alive but the hotkey is dead until restart (a mic failure once did
+    # exactly this). Swallow and log instead; on a failed press, clear _held so
+    # the next press retries rather than waiting on a release that never "took".
+
     def _press(self, key) -> None:
         if key == self._key and not self._held:
             self._held = True
-            self._on_press()
+            try:
+                self._on_press()
+            except Exception as e:
+                self._held = False
+                print(f"[flow] press handler failed: {e}")
 
     def _release(self, key) -> None:
         if key == self._key and self._held:
             self._held = False
-            self._on_release()
+            try:
+                self._on_release()
+            except Exception as e:
+                print(f"[flow] release handler failed: {e}")
 
     def start(self) -> None:
         self._listener.start()

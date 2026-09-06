@@ -31,7 +31,8 @@ import numpy as np
 
 from flow.audio import SAMPLE_RATE, gain_for
 
-DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v3"
+# English-only on purpose — see the parakeet_model comment in config.py.
+DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v2"
 
 _MIN_TRANSCRIBE_SAMPLES = SAMPLE_RATE // 10  # <0.1 s — an accidental tap
 
