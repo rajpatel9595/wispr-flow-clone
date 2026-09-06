@@ -17,6 +17,9 @@ stop Event) lives on a `Dictation`, never on FlowApp. Two dictations can be in
 flight at once — the user can press again while the previous paste is still
 computing — and sharing those slots is what used to make the second one paste
 with the first one's tone, or stop the first one's recording out from under it.
+Every _current/_state transition happens under `_transition`: the "is this
+still mine?" check and the write must be one atomic step, or a press landing
+between them orphans the new dictation (see the lock's comment in __init__).
 """
 from __future__ import annotations
 
@@ -73,14 +76,22 @@ class FlowApp:
         self._history_menu = None
         self._current: Dictation | None = None  # the take the UI should render
         self._pipeline = threading.Lock()    # serialises model use across dictations
+        # Makes every _current/_state transition atomic. The "if _current is d"
+        # check-then-act in _dictate races the listener thread's _on_press:
+        # unguarded, a press landing between the check and the reset let an old
+        # dictation's cleanup null out the NEW dictation's _current — its stop
+        # Event was then never set on release, and its thread held _pipeline
+        # forever, wedging every dictation after it until restart.
+        self._transition = threading.Lock()
 
     # --- pipeline (background threads) ---------------------------------------
 
     def _on_press(self) -> None:
         d = Dictation(target_app=context.frontmost_app())
         d.take = self.recorder.start()  # this dictation's own frames
-        self._current = d
-        self._state = "recording"
+        with self._transition:
+            self._current = d
+            self._state = "recording"
         # One thread owns the whole dictation: it feeds the stream while the key
         # is down, finalises the session, then runs the pipeline. Release only
         # sets that dictation's Event — so every feed and the teardown are issued
@@ -88,7 +99,8 @@ class FlowApp:
         threading.Thread(target=self._dictate, args=(d,), daemon=True).start()
 
     def _on_release(self) -> None:
-        d = self._current
+        with self._transition:
+            d = self._current
         if d is not None:
             d.stop.set()  # _dictate() owns everything from here
 
@@ -103,8 +115,9 @@ class FlowApp:
                     while not d.stop.wait(_POLL_SECS):
                         d.partial = session.feed(d.take.drain())
                     audio = self.recorder.stop(d.take)
-                    if self._current is d:
-                        self._state = "busy"  # not ours to set if a new take began
+                    with self._transition:
+                        if self._current is d:
+                            self._state = "busy"  # not ours to set if a new take began
                     secs = len(audio) / SAMPLE_RATE
                     streamed = ""
                     # Only pay for the final flush when the text will be used;
@@ -122,9 +135,10 @@ class FlowApp:
                 # so this is safe even once the user has pressed again. The UI
                 # state, though, is only ours to reset while we own it.
                 self.recorder.stop(d.take)
-                if self._current is d:
-                    self._state = "idle"
-                    self._current = None
+                with self._transition:
+                    if self._current is d:
+                        self._state = "idle"
+                        self._current = None
 
     def _process(self, d: Dictation, audio, streamed: str = "") -> None:
         try:

@@ -4,14 +4,16 @@ This is the most concurrency-dense code in the app (three threads, a shared
 recorder, a streaming session that must always be torn down), so it is faked
 rather than left to manual testing. Every case here is a bug that shipped once.
 """
+import sys
 import threading
 import time
+import types
 from contextlib import contextmanager
 
 import numpy as np
 import pytest
 
-from flow.audio import SAMPLE_RATE
+from flow.audio import SAMPLE_RATE, Recorder
 from flow.config import Config
 from flow.main import Dictation, FlowApp
 
@@ -207,6 +209,63 @@ class TestPerDictationState:
         app._on_release()  # must not raise
 
 
+class TestRecorderMicHandoff:
+    """The real Recorder's start/stop handoff, with PortAudio faked.
+
+    start() runs on the hotkey listener thread while a previous take's stop()
+    runs on that dictation's own thread; the pair must be atomic or a press
+    landing mid-close inherits a microphone that is about to disappear.
+    """
+
+    def test_press_during_previous_takes_mic_close_still_records(self, monkeypatch):
+        closing = threading.Event()  # stop() has reached the PortAudio close
+        release = threading.Event()  # test lets the close finish
+        streams = []
+
+        class SlowCloseStream:
+            def __init__(self, *args, **kwargs):
+                self.callback = kwargs.get("callback")
+                self.dead = False
+                streams.append(self)
+
+            def start(self):
+                pass
+
+            def stop(self):
+                closing.set()
+                assert release.wait(timeout=5), "test never released the close"
+
+            def close(self):
+                self.dead = True
+
+        sd = types.ModuleType("sounddevice")
+        sd.InputStream = SlowCloseStream
+        monkeypatch.setitem(sys.modules, "sounddevice", sd)
+
+        rec = Recorder()
+        first = rec.start()
+        stopper = threading.Thread(target=rec.stop, args=(first,))
+        stopper.start()
+        assert closing.wait(timeout=5)
+
+        # The next press arrives while the mic teardown is still in flight.
+        second_take = []
+        starter = threading.Thread(target=lambda: second_take.append(rec.start()))
+        starter.start()
+        time.sleep(0.05)  # unguarded, start() would slip through here
+        release.set()
+        stopper.join(timeout=5)
+        starter.join(timeout=5)
+        assert not stopper.is_alive() and not starter.is_alive()
+
+        live = rec._stream
+        assert live is not None and not live.dead, "new take was left with no microphone"
+        # ...and the frames it captures reach the new take, not the void.
+        live.callback(np.ones((10, 1), dtype=np.float32), 10, None, None)
+        assert second_take[0].drain().size == 10
+        rec.stop(second_take[0])
+
+
 class TestConcurrency:
     def test_two_dictations_are_serialised_on_the_pipeline_lock(self, app):
         """Streaming and batch generate() must never interleave on the model."""
@@ -236,3 +295,27 @@ class TestConcurrency:
         for t in threads:
             t.join(timeout=5)
         assert max(overlaps) == 1, f"model used concurrently: {overlaps}"
+
+    def test_rapid_presses_never_wedge_the_pipeline(self, app):
+        """A press landing inside another dictation's cleanup check-then-act
+        used to null out the NEW dictation's _current; its stop Event was then
+        never set and its thread held _pipeline forever. Hammer press/release
+        with maximal thread interleaving and require full drainage."""
+        old = sys.getswitchinterval()
+        sys.setswitchinterval(1e-5)
+        try:
+            for _ in range(300):
+                app._on_press()
+                app._on_release()
+        finally:
+            sys.setswitchinterval(old)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if app._current is None and app._state == "idle":
+                break
+            time.sleep(0.01)
+        assert app._pipeline.acquire(timeout=5), (
+            "a dictation never finished — its stop Event was orphaned"
+        )
+        app._pipeline.release()
+        assert app._state == "idle" and app._current is None
