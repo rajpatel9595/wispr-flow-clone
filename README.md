@@ -7,7 +7,7 @@ A free, local, privacy-first clone of [Wispr Flow](https://wisprflow.ai): hold a
 ## Features (Wispr parity, all free)
 
 - **Hold-to-talk anywhere** — hold **right Option (⌥)**, speak, release. Works in every app.
-- **Local transcription** — [parakeet-mlx](https://github.com/senstella/parakeet-mlx) `tdt-0.6b-v3` running on the Apple GPU via MLX: ~33× realtime (14 s of speech transcribes in 0.42 s). [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small.en` on CPU remains available via `"backend": "whisper"`.
+- **Local transcription** — [parakeet-mlx](https://github.com/senstella/parakeet-mlx) `tdt-0.6b-v2` (English-only; set `parakeet_model` to `…-v3` for multilingual) running on the Apple GPU via MLX: ~33× realtime (14 s of speech transcribes in 0.42 s). [faster-whisper](https://github.com/SYSTRAN/faster-whisper) `small.en` on CPU remains available via `"backend": "whisper"`.
 - **Streaming transcription** — text is recognised *while you speak* and shown live above the pill, so release-to-paste stays fast no matter how long you talk.
 - **Voice-reactive HUD** — Wispr-style black pill above the Dock; waveform bars follow your actual voice.
 - **Per-app tone** — casual in Slack/Messages/Discord, verbatim (no invented punctuation) in terminals/IDEs, clean prose everywhere else.
