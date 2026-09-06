@@ -31,7 +31,13 @@ import numpy as np
 
 from flow.audio import SAMPLE_RATE, gain_for
 
-DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v3"
+DEFAULT_PARAKEET = "mlx-community/parakeet-tdt-0.6b-v2"  # English-only; see Config
+
+# parakeet v3's supported languages that are not written in Latin script. For
+# any other configured language, a transcript dominated by non-Latin letters
+# means the model auto-detected the wrong language, not that the user spoke it.
+_NON_LATIN_LANGS = frozenset({"ru", "uk", "bg", "el"})
+_LATIN_MAX = 0x024F  # end of Latin Extended-B: keeps café, naïve, Straße
 
 _MIN_TRANSCRIBE_SAMPLES = SAMPLE_RATE // 10  # <0.1 s — an accidental tap
 
@@ -90,6 +96,19 @@ def digits(text: str) -> str:
     )
 
 
+def foreign_script(text: str) -> bool:
+    """True if most letters in `text` are outside Latin script.
+
+    The multilingual parakeet v3 has no language pin, so a short, quiet or
+    noisy English take sometimes comes back as Russian/Bulgarian/Greek. Pasting
+    that into the user's document is worse than pasting nothing.
+    """
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    return sum(ord(c) > _LATIN_MAX for c in letters) * 2 > len(letters)
+
+
 # --- backends -----------------------------------------------------------------
 
 
@@ -109,9 +128,12 @@ class _ParakeetBackend:
 
     streams = True
 
-    def __init__(self, model_id: str = DEFAULT_PARAKEET, spell_numbers: bool = False):
+    def __init__(
+        self, model_id: str = DEFAULT_PARAKEET, spell_numbers: bool = False, language: str = "en"
+    ):
         self.model_id = model_id
         self.spell_numbers = spell_numbers
+        self.language = language
         self._model = None
 
     def load(self) -> None:
@@ -137,6 +159,12 @@ class _ParakeetBackend:
         return session
 
     def clean(self, text: str) -> str:
+        if self.language not in _NON_LATIN_LANGS and foreign_script(text):
+            print(
+                f"[flow] dropped {text!r}: the model auto-detected another language. "
+                f"Set parakeet_model to the English-only {DEFAULT_PARAKEET}."
+            )
+            return ""
         return text if self.spell_numbers else digits(text)
 
 
@@ -308,7 +336,7 @@ class Transcriber:
     ):
         self.backend = backend
         if backend == "parakeet":
-            self._backend: Backend = _ParakeetBackend(parakeet_model, spell_numbers)
+            self._backend: Backend = _ParakeetBackend(parakeet_model, spell_numbers, language)
             self.label = parakeet_model.rsplit("/", 1)[-1]
         else:
             self._backend = _WhisperBackend(model_size, language)

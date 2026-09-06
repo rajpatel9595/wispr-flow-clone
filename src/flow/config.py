@@ -11,7 +11,10 @@ CONFIG_PATH = Path.home() / ".flowclone.json"
 @dataclass
 class Config:
     backend: str = "parakeet"        # parakeet (MLX/GPU) | whisper (faster-whisper/CPU)
-    parakeet_model: str = "mlx-community/parakeet-tdt-0.6b-v3"
+    # v2 is English-only. v3 is multilingual and auto-detects the language of
+    # every utterance with no way to pin it, so a short/quiet English take
+    # sometimes came back in Cyrillic or Greek. Same architecture and speed.
+    parakeet_model: str = "mlx-community/parakeet-tdt-0.6b-v2"
     spell_numbers: bool = False      # parakeet says "twenty two"; False -> "22"
     stream: bool = True              # transcribe while speaking (parakeet only)
     stream_finalize_secs: float = 60.0  # <= this, re-transcribe fully for accuracy
